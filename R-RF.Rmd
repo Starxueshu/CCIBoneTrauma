@@ -1,0 +1,222 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+1.随机分组
+基于R语言“xlsx”包，读取excel数据文件“Database.xls”中的名为“star”的表格(sheetName = "star")，并在程序里面将数据库命名为“star”。
+```{r}
+library(xlsx)
+star<- read.csv("test_set_with_predictions-Random forests model.csv")
+#starv<- read.xlsx("6 validation group.xls",sheetName = "star")
+```
+
+```{r}
+star$Y<-star$Group
+```
+
+
+
+
+Mena risk probablity
+```{r}
+round(mean(star$lr_pred_proba),3)
+```
+
+Baier score
+```{r}
+B     <- mean((star$Y) * (1-star$lr_pred_proba)^2 + 
+                (1-star$Y) * star$lr_pred_proba^2)
+round(B,3)
+```
+
+```{r}
+library(rms)
+lrm1 <- lrm(Y ~ lr_pred_proba, data=star)
+library(ggDCA)
+dca_lrm <- dca(lrm1,model.names = c("Logistic Regression"))
+head(dca_lrm)
+library(tidyverse)
+tiff(filename="Decision_curve_Logistic Regression.tif", width=600*6, height=600*6, res=90*6)
+par(mfrow=c(1,1), mar=c(4.2,4.2,3,.5), pty="m")
+
+ggplot(dca_lrm, lwd = 0.65)+theme_gray()+theme(legend.position = c(0.85,0.85))+xlim(c(0.0,0.3))+ylim(c(0.0,0.1))
+
+dev.off()
+```
+
+
+
+Decision curve绘制
+```{r}
+library(rmda)
+modelt <- decision_curve(Y~lr_pred_proba,data=star,
+                         fitted.risk=T)
+```
+
+```{r}
+tiff(filename="Decision_curve_lr.tif", width=600*6, height=600*6, res=90*6)
+par(mfrow=c(1,1), mar=c(4.2,4.2,3,.5), pty="m")
+plot_decision_curve(modelt,curve.name=c('Logistic Regression'),xlim=c(0,0.4),ylim=c(0,0.15),
+                    cost.benefit.axis=T,col=c('red'),
+                    confidence.intervals=F,standardize=FALSE)
+dev.off()
+```
+
+
+Discrimination slopes计算
+```{r}
+pmeanpred <- mean(star$lr_pred_proba[star$Y==1])
+pmeanpred 
+nmeanpred <- mean(star$lr_pred_proba[star$Y==0])
+nmeanpred
+discrislope <- pmeanpred-nmeanpred
+discrislope
+```
+
+直方图分组可视化比较
+下方代码为将模型建立组数据集start以及验证组数据集starv中的因变量Y转变为因子，并进行数据打包。
+
+```{r}
+star$Y <- factor(star$Y,levels = c(0,1),labels=c("No","Yes"))
+```
+
+下方代码为在模型验证集中，绘制组间比较的直方图。starv%>%，为使用的数据集为模型验证集，其他代码同前。
+```{r}
+library(tidyverse)
+tiff(filename="zhifangtu-RF.tif", width=800*6, height=400*6, res=90*6)
+par(mfrow = c(1,1), pty='s', mar=c(4,3,4,1),cex=1, font =2, col=1)
+star%>%
+  ggplot(aes(x=lr_pred_proba, fill=Y))+
+  scale_fill_manual(values=c("#5CB85CFF", "#D43F3AFF"))+
+  geom_density(alpha=0.6,color = "grey",adjust=1.00,lwd = 0.02)+xlim(0,1)+
+  labs(title="Random Forest", 
+        x ="Risk", y = "Density")+
+    theme(plot.title = element_text(size=14,hjust=0.5))+
+  theme(legend.position="bottom")
+dev.off()
+###alpha=0.4为透明度，
+```
+
+
+
+```{r}
+library(rms)
+full <- lrm(Y~lr_pred_proba,
+            data=star,x=T,y=T,linear.predictors=T)
+full
+```
+
+```{r}
+source('F:/Book/R-15/R code with RevEspCard 2011 paper/val.prob.ci.June09-3.r')
+tiff(filename="Calibration_curve_Logistic Regression.tif", width=600*6, height=600*6, res=90*6)
+par(mfrow = c(1,1), pty='s', mar=c(4,3,4,1),cex=1, font =1, col=1)
+val.prob.ci(p=star$lr_pred_proba, y=full$y,pl=T, smooth=T, logistic.cal=F, g=10,
+            xlab="Predicted Probability", ylab="Actual Probability",riskdist='predicted', cex.lab=.7, 
+            cex.d01=.65, d1lab="Yes", d0lab="No", dist.label=-0.05, dist.label2=.025, 
+            dostats=c(12,13), legendloc =  c(0.60 , 0.35), statloc = c(0,.80),
+            xlim=c(-0.1,1), ylim=c(-0.15,1))
+lines(x=c(0,1), y=c(0,0))
+title("Logistic Regression", adj=0.5)
+dev.off()
+```
+
+
+calibration curves绘制
+```{r}
+cali <- calibrate(full, method="boot",B=1000)
+
+tiff(filename="Calibration_curve-lr.tif", width=600*6, height=600*6, res=90*6)
+plot(cali,
+     xlim=c(0,1),
+     ylim=c(0,1),
+     xlab="Predicted Probability",
+     ylab="Observed Porbability",
+     legend=F,
+     subtitles=F)
+#abline(0,1,col="black",lty=2,lwd=2)
+lines(cali[,c("predy","calibrated.corrected")],lty=1,lwd=1,col="blue",pch=16)
+lines(cali[,c("predy","calibrated.orig")],lty=1,lwd=1,col="red",pch=16)
+legend(0.55,0.35,
+       c("Ideal","Apparent","Bias-corrected"),
+       lty=c(2,1,1),
+       lwd=c(1,1,1),
+       col=c("black","red","blue"),
+       bty="n")
+title(paste("Logistic Regression"))
+dev.off()
+```
+
+
+```{r}
+library(pROC)
+ROC <- roc(star$Y,star$lr_pred_proba)
+round(auc(ROC),3)
+round(ci(auc(ROC)),3)
+```
+
+```{r}
+ROC.results <- coords(ROC,"best",ret="all",transpose=T)
+round(as.matrix(ROC.results),3)
+```
+
+```{r}
+library(ggplot2)
+library(ggsignif)
+
+library("RColorBrewer")
+tiff(filename="volin plot-RF.tif", width=600*6, height=500*6, res=90*6)
+par(mfrow = c(1,1), pty='s', mar=c(4,3,4,1),cex=1, font =1, col=1)
+
+ggplot(star,aes(x=Y,y=lr_pred_proba,fill=Y)) +
+    geom_violin(alpha = 0.45,trim = F) + 
+  #scale_fill_brewer(palette = "Dark2") + 
+  scale_fill_manual(values=c("#5CB85CFF", "#D43F3AFF"))+
+    #theme_classic() + 
+  geom_boxplot(width = 0.1, fill = "white") + 
+    theme(text = element_text(size = 18), 
+          axis.text.x = element_text(size = 18), 
+          plot.title = element_text(hjust = 0.5), 
+          legend.position = c(0.15,0.9)) +
+  ggtitle(paste("Random Forest: slope=", 
+            round(pmeanpred-nmeanpred,3),sep="")) +
+    xlab("Groups") +  ylab("Predicted risk")+
+  geom_signif(comparisons=list(c("No","Yes")), 
+    #step_increase = 0.1,
+    test="t.test",                    
+    map_signif_level=F)
+
+dev.off()
+```
+
+
+
+```{r}
+library(ggplot2)
+library(ggsignif)
+
+tiff(filename="xiangshitu-lr.tif", width=800*6, height=600*6, res=90*6)
+par(mfrow = c(1,1), pty='s', mar=c(4,3,4,1),cex=1, font =1, col=1)
+  
+ggplot(data=star,aes(x = Y, y =lr_pred_proba)) +
+  geom_boxplot(aes(fill=Y),alpha=0.4) +
+    scale_y_continuous(name = "Predicted probability")+
+    scale_x_discrete(name = "Actual status") +
+  scale_fill_manual(values=c("green", "red"))+
+    ggtitle(paste("Logistic Regression, Discrimination Slope=", 
+            round(pmeanpred-nmeanpred,3),sep="")) +
+    theme_bw() +
+    theme(plot.title = element_text(size = 14, face =  "bold"),
+          text = element_text(size = 12),
+          axis.title = element_text(face="bold"),
+          axis.text.x=element_text(size = 12),
+          axis.text.y=element_text(size = 12)) +
+    geom_signif(                         # 添加显著性标签
+    comparisons=list(c("No","Yes")), # 选择你想在哪2组上添加标签
+    step_increase = 0.1,
+    test="wilcox.test",                     # "t 检验，比较两组（参数）" = "t.test","Wilcoxon 符号秩检验，比较两组（非参数）" = "wilcox.test"
+    map_signif_level=F                 # 标签样式F为数字，T为*号
+    )
+dev.off()
+```
+
